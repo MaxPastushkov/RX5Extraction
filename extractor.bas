@@ -3,8 +3,7 @@
 ' https://sagagames.de/
 ' BSD license
 
-#Define ROM_FILE "a.bin"
-'#Define ROM_FILE "M5M23C100-513P-4.bin"
+#Define ROM_FILE "rom.bin"
 #Define DUMP_SAMPLES
 
 #Include "vbcompat.bi"
