@@ -19,7 +19,7 @@
 
 /* The following PCM parameters are fixed for RX5 */
 #define NUM_CHANNELS 1
-#define BPS 12
+#define BPS 24 // this works with flags = 1
 #define SAMPLE_RATE 11025
 
 struct FILE_HEADER {
@@ -90,9 +90,11 @@ void init_wav_header(size_t pcm_size) {
     wav_header.subchunk1_size = 16;
     wav_header.audio_format = 1;
     wav_header.num_channels = NUM_CHANNELS;
-    wav_header.sample_rate = BPS;
-    wav_header.byte_rate = ceil((float)(SAMPLE_RATE * BPS * NUM_CHANNELS)/8);
-    wav_header.block_align = ceil((float)(BPS * NUM_CHANNELS)/8);
+    wav_header.sample_rate = SAMPLE_RATE;
+    //wav_header.byte_rate = floor((double)(SAMPLE_RATE * BPS * NUM_CHANNELS)/8);
+    //wav_header.block_align = floor((double)(BPS * NUM_CHANNELS)/8);
+    wav_header.byte_rate = (SAMPLE_RATE * BPS * NUM_CHANNELS)/8;
+    wav_header.block_align = (BPS * NUM_CHANNELS)/8;
     wav_header.bits_per_sample = BPS;
     memcpy(wav_header.subchunk2_id, "data", 4);
     wav_header.subchunk2_size = pcm_size;
@@ -112,6 +114,23 @@ int process_sample() {
         return -1;
     }
     
+    uint16_t unknown1; /* unknown and unused */
+    uint8_t flags; /* 0 - 8 bit, 1 - 12 bit ??? - unreliable */
+    uint8_t unknown2; /* unknown, AND 01 is loop on??? what is AND $40? ??? */
+    uint16_t unknown3; /* unknown and unused */
+    uint16_t loop_end; /* end of the loop */
+    char unknown4[12]; /* unknown and unused */
+    
+    printf("u1: %04x, f: %i, u2: %04x, u3: %04x, u4: %04x%04x%04x\n",
+           sample_header.unknown1,
+           sample_header.flags,
+           sample_header.unknown2,
+           sample_header.unknown3,
+           (uint32_t)*sample_header.unknown4,
+           (uint32_t)*(sample_header.unknown4+4),
+           (uint32_t)*(sample_header.unknown4+8)
+           );
+    
     /* Remember curent position after reading the header */
     prev_pos = ftell(in);
 
@@ -127,7 +146,6 @@ int process_sample() {
     
     /* Swapping bytes and conversions */
     full_offset = (sample_header.offset & 0x0FFF) << 8;
-    
     full_length = bit_swap32(sample_header.end_offset);
     full_length = ((full_length & 0x0FFFFF00) >> 8) - full_offset;
     
