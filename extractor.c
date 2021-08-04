@@ -19,8 +19,9 @@
 
 /* The following PCM parameters are fixed for RX5 */
 #define NUM_CHANNELS 1
-#define BPS 24 // this works with flags = 1
-#define SAMPLE_RATE 11025
+#define BPS_0 12 // this works with flags = 0
+#define BPS_1 24 // this works with flags = 1
+#define SAMPLE_RATE 12000
 
 struct FILE_HEADER {
     uint32_t nulls; /* unknown and unused */
@@ -43,10 +44,10 @@ struct SAMPLE_HEADER {
 #define SAMPLE_HEADER_SIZE 32 /* to avoid platform-dependent alignment */
 
 struct WAV_HEADER {
-    char chunk_id[4];           /* "RIFF" */
+    uint8_t chunk_id[4];        /* "RIFF" */
     uint32_t chunk_size;        /* Overall file size */
-    char format[4];             /* "WAVE" */
-    char subchunk1_id[4];       /* "fmt " */
+    uint8_t format[4];          /* "WAVE" */
+    uint8_t subchunk1_id[4];    /* "fmt " */
     uint32_t subchunk1_size;    /* 16 */
     uint16_t audio_format;      /* 1 is PCM */
     uint16_t num_channels;      /* Number of channels */
@@ -54,13 +55,14 @@ struct WAV_HEADER {
     uint32_t byte_rate;         /* (sampleRate * bitsPerSample * numChannels) / 8 */
     uint16_t block_align;       /* (bitsPerSample * channels) / 8 */
     uint16_t bits_per_sample;   /* Bits per sample */
-    char subchunk2_id[4];       /* "data" */
+    uint8_t subchunk2_id[4];    /* "data" */
     uint32_t subchunk2_size;    /* Size of raw audio */
 } wav_header;
 
 FILE *in, *out; /* streams */
 int sample; /* sample counter */
 long prev_pos; /* storage */
+short pcm_only = 0; /* generate PCM files instead of WAV */
 
 /* Swap 32 bits */
 uint32_t bit_swap32(uint32_t s) {
@@ -82,6 +84,7 @@ void trim(char *s) {
 
 /* Initialize WAV header */
 void init_wav_header(size_t pcm_size) {
+    uint16_t bps = sample_header.flags == 0 ? BPS_0 : BPS_1;
     memset(&wav_header, 0, sizeof(struct WAV_HEADER));
     memcpy(wav_header.chunk_id, "RIFF", 4);
     wav_header.chunk_size = pcm_size + sizeof(struct WAV_HEADER);
@@ -91,11 +94,9 @@ void init_wav_header(size_t pcm_size) {
     wav_header.audio_format = 1;
     wav_header.num_channels = NUM_CHANNELS;
     wav_header.sample_rate = SAMPLE_RATE;
-    //wav_header.byte_rate = floor((double)(SAMPLE_RATE * BPS * NUM_CHANNELS)/8);
-    //wav_header.block_align = floor((double)(BPS * NUM_CHANNELS)/8);
-    wav_header.byte_rate = (SAMPLE_RATE * BPS * NUM_CHANNELS)/8;
-    wav_header.block_align = (BPS * NUM_CHANNELS)/8;
-    wav_header.bits_per_sample = BPS;
+    wav_header.byte_rate = (SAMPLE_RATE * bps * NUM_CHANNELS) >> 3;
+    wav_header.block_align = (bps * NUM_CHANNELS) >> 3;
+    wav_header.bits_per_sample = bps;
     memcpy(wav_header.subchunk2_id, "data", 4);
     wav_header.subchunk2_size = pcm_size;
 }
@@ -121,7 +122,7 @@ int process_sample() {
     uint16_t loop_end; /* end of the loop */
     char unknown4[12]; /* unknown and unused */
     
-    printf("u1: %04x, f: %i, u2: %04x, u3: %04x, u4: %04x%04x%04x\n",
+    printf("RX Header: %04X %X %04X %04X %04X %04X %04X ",
            sample_header.unknown1,
            sample_header.flags,
            sample_header.unknown2,
@@ -138,11 +139,15 @@ int process_sample() {
     memcpy(sname, sample_header.name, 6);
     sname[6] = 0;
     trim(sname);
-    printf("Processing sample %i: ... ", sample+1);
+    printf("Sample %i: ", sample+1);
     
     /* Destination file name */
     strcpy(out_path, sname);
-    strcat(out_path, ".wav");
+    if (pcm_only) {
+        strcat(out_path, ".pcm");
+    } else {
+        strcat(out_path, ".wav");
+    }
     
     /* Swapping bytes and conversions */
     full_offset = (sample_header.offset & 0x0FFF) << 8;
@@ -167,11 +172,13 @@ int process_sample() {
             return -1;
         }
         
-        /* Prepare and write VAW header */
-        init_wav_header(full_length);
-        if (fwrite(&wav_header, sizeof(struct WAV_HEADER), 1, out) != 1) {
-            perror("Something went wrong, can't write WAV header");
-            return -1;
+        if (!pcm_only) {
+            /* Prepare and write VAW header */
+            init_wav_header(full_length);
+            if (fwrite(&wav_header, sizeof(struct WAV_HEADER), 1, out) != 1) {
+                perror("Something went wrong, can't write WAV header");
+                return -1;
+            }
         }
 
         /* Write PCM data */
@@ -186,7 +193,7 @@ int process_sample() {
 
     /* It's done! */
     fclose(out);
-    printf("%s done\n", out_path);
+    printf("%s\n", out_path);
     
     return 0;
 
@@ -195,9 +202,13 @@ int process_sample() {
 int main(int argc, char *argv[]) {
     
 	if (argc < 2) {
-		fprintf(stderr, "Usage: %s input_file [output_file.bin]\n", argv[0]);
+		fprintf(stderr, "Usage: %s input_file [-p]\n", argv[0]);
 		return -1;
 	}
+    
+    if (argc > 2) {
+        pcm_only = !strcmp(argv[2], "-p");
+    }
   
     /* Open input file */
     if (!(in = fopen(argv[1], "rb"))) {
