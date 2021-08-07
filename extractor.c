@@ -77,9 +77,16 @@ uint32_t bit_swap32(uint32_t s) {
 
 /* For some reason C does not provide trimming of strings */
 void trim(char *s) {
-    while (*s && *s != ' ')
-        s++;
-    *s = 0;
+    char *end;
+    
+    if (*s == 0)
+        return;
+    
+    end = s + strlen(s) - 1;
+    while (end > s && *end == ' ')
+        end--;
+    
+    end[1] = 0;
 }
 
 /* Initialize WAV header */
