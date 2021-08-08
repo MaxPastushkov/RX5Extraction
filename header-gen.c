@@ -33,7 +33,7 @@ int main(int argc, char *argv[]) {
 	// Configuration
 	int numChannels = 1;
 	int bitsPerSample = 12;
-	uint32_t sampleRate = 11025;
+	uint32_t sampleRate = 12000;
 
 	FILE *inputFile, *outputFile;
 	char outputPath[101], c;
